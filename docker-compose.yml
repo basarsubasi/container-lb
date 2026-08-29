@@ -1,0 +1,59 @@
+# Docker Compose: container-lb + backend pool
+#
+# Quick start:
+#   docker compose up --build
+#
+# The VIP defaults to this host's eth0 IP (172.16.0.101), so clients can ping
+# that address and get load-balanced replies from the backend containers.
+# Override any value on the command line, e.g.:
+#   IFACE=ens5 VIP=192.168.1.10 BACKEND_REPLICAS=3 docker compose up --build
+#
+# Notes:
+# - ICMP destined to the VIP is intercepted at the NIC (XDP) and distributed
+#   across the backends; replies are SNAT'd back so clients only ever see
+#   the VIP. TCP is untouched by the current data plane.
+# - The LB container runs in the host network + PID namespaces and needs
+#   privileges to attach XDP programs and inspect container netns.
+
+services:
+  lb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: container-lb
+    network_mode: host
+    pid: host
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys/fs/bpf:/sys/fs/bpf
+      - /sys/kernel/debug:/sys/kernel/debug:ro
+    command:
+      - -iface
+      - eth0
+      - -vip
+      - 172.16.0.101
+      - -label
+      - lb.backend=true
+      - -poll
+      - 2s
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    image: alpine:latest
+    networks:
+      - backend-net
+    labels:
+      - lb.backend=true
+    command:
+      - sleep
+      - infinity
+    deploy:
+      replicas: ${BACKEND_REPLICAS:-2}
+    restart: unless-stopped
+
+networks:
+  backend-net:
+    driver: bridge
