@@ -4,15 +4,23 @@ import (
 	"fmt"
 	"net"
 	"sync"
-
-	"container-lb/userspace/bpf"
 )
+
+// BPFUpdater defines the kernel-side map and XDP program lifecycle operations
+// required by the discovery pool.
+type BPFUpdater interface {
+	UpdateBackend(idx uint32, ip net.IP, port uint16, mac net.HardwareAddr) error
+	ClearBackend(idx uint32, ip net.IP) error
+	UpdateConfig(vip net.IP, vport uint16, backendCount uint32, srcMAC net.HardwareAddr) error
+	AttachVethXDP(vethName string, vethIfIndex int) error
+	DetachVethXDP(vethName string) error
+}
 
 // Pool reconciles discovered backends with the kernel BPF maps and manages
 // per-container host-side veth XDP attachments for SNAT on the return path.
 type Pool struct {
 	mu         sync.RWMutex
-	bpfManager *bpf.Manager
+	bpfManager BPFUpdater
 	backends   []Backend       // snapshot of last-synced backends
 	byVeth     map[string]bool // set of currently-attached veth names
 	vip        net.IP
@@ -21,7 +29,7 @@ type Pool struct {
 }
 
 // NewPool initialises the backend pool.
-func NewPool(bpfManager *bpf.Manager, vip net.IP, vport uint16, srcMAC net.HardwareAddr) *Pool {
+func NewPool(bpfManager BPFUpdater, vip net.IP, vport uint16, srcMAC net.HardwareAddr) *Pool {
 	return &Pool{
 		bpfManager: bpfManager,
 		byVeth:     make(map[string]bool),
@@ -49,6 +57,12 @@ func (p *Pool) Sync(newBackends []Backend) error {
 
 	// ── Write new backend entries ──────────────────────────────────────────
 	for i, b := range newBackends {
+		// If this index was previously used by a different IP, clear the old IP
+		// from the reverse map (backend_ips_map) so we don't leak entries.
+		if i < len(p.backends) && !p.backends[i].IP.Equal(b.IP) {
+			_ = p.bpfManager.ClearBackend(uint32(i), p.backends[i].IP)
+		}
+
 		if err := p.bpfManager.UpdateBackend(uint32(i), b.IP, b.Port, b.MAC); err != nil {
 			return fmt.Errorf("write backend %d (%s): %w", i, b.Name, err)
 		}
