@@ -5,7 +5,19 @@ ARCH   := $(shell uname -m)
 
 BPFTOOL ?= ./tools/bpftool
 
-.PHONY: generate build clean run backends-up backends-down vmlinux
+# Root-privileged test runner: tests attach XDP programs and inspect container
+# netns, which requires root. sudo sanitizes the environment, so PATH and the
+# Go caches are re-exported explicitly. GOCACHE is redirected to /tmp so root
+# never leaves root-owned files inside the user's build cache.
+GOMODCACHE := $(shell $(GO) env GOMODCACHE)
+SUDO_GO    := sudo env \
+              "PATH=$(PATH):/usr/local/go/bin" \
+              "HOME=$(HOME)" \
+              "GOCACHE=/tmp/container-lb-gocache-root" \
+              "GOMODCACHE=$(GOMODCACHE)" \
+              $(GO)
+
+.PHONY: generate build clean run test-integration test-e2e backends-up backends-down vmlinux
 
 vmlinux:
 	@echo "==> Generating vmlinux.h from BTF..."
@@ -38,3 +50,9 @@ backends-down:
 
 run: build
 	sudo ./bin/container-lb -iface docker0
+
+test-integration:
+	$(SUDO_GO) test -v -count=1 -timeout 120s ./tests/integration/
+
+test-e2e: build
+	$(SUDO_GO) test -v -count=1 -timeout 300s ./tests/e2e/
