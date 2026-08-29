@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"container-lb/tests/testutil"
+	"container-lb/userspace/discovery"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,10 +58,20 @@ func TestE2E_LoadBalancer(t *testing.T) {
 	require.NoError(t, err)
 	defer cClient.Terminate(ctx)
 
-	// 6. Start the load balancer binary
+	// Get client PID to find its host veth
+	state, err := cClient.State(ctx)
+	require.NoError(t, err)
+	
+	clientVethName, _, err := discovery.FindHostVeth(state.Pid)
+	require.NoError(t, err)
+	t.Logf("Discovered client veth interface: %s", clientVethName)
+
+	// 6. Start the load balancer binary, passing the client veth as the ingress interface!
+	// This avoids the EEXIST error from attaching Generic XDP to a bridge and its ports simultaneously,
+	// and accurately models attaching to a host interface (e.g., eth0) in a real deployment.
 	vip := "10.200.200.200"
 	cmd := exec.Command("sudo", "../../bin/container-lb",
-		"-iface", bridgeName,
+		"-iface", clientVethName,
 		"-label", "lb.e2e=true",
 		"-vip", vip,
 	)

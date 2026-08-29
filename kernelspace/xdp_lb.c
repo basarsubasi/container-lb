@@ -127,7 +127,7 @@ int xdp_lb_ingress(struct xdp_md *ctx)
         stats->rx_bytes += ((__u64)(data_end - data));
     }
 
-    return XDP_TX;
+    return XDP_PASS;
 }
 
 /* =========================================================================

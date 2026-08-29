@@ -46,6 +46,7 @@ func NewManager(ifaceName string) (*Manager, error) {
 		ifaceIdx:  iface.Index,
 	}
 
+	/*
 	// Attach DNAT program to docker0 ingress.
 	// Try native driver mode first; veth/bridge interfaces may require generic.
 	xdpLink, err := link.AttachXDP(link.XDPOptions{
@@ -65,6 +66,7 @@ func NewManager(ifaceName string) (*Manager, error) {
 		}
 	}
 	m.xdpLink = xdpLink
+	*/
 
 	return m, nil
 }
@@ -79,14 +81,22 @@ func (m *Manager) AttachVethXDP(vethName string, vethIfIndex int) error {
 		return nil // already attached
 	}
 
-	// Veths typically need generic XDP mode unless both sides have XDP loaded.
+	// Veths typically support native XDP in modern kernels.
 	l, err := link.AttachXDP(link.XDPOptions{
 		Program:   m.objs.XdpVethSnat,
 		Interface: vethIfIndex,
-		Flags:     link.XDPGenericMode,
+		Flags:     link.XDPDriverMode,
 	})
 	if err != nil {
-		return fmt.Errorf("attach XDP SNAT to veth %s (idx %d): %w", vethName, vethIfIndex, err)
+		errDriver := err
+		l, err = link.AttachXDP(link.XDPOptions{
+			Program:   m.objs.XdpVethSnat,
+			Interface: vethIfIndex,
+			Flags:     link.XDPGenericMode,
+		})
+		if err != nil {
+			return fmt.Errorf("driver mode err: %v, generic mode err: %v", errDriver, err)
+		}
 	}
 
 	m.vethLinks[vethName] = l

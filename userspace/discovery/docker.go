@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 
@@ -140,93 +139,53 @@ func (w *DockerWatcher) DiscoverBackends(ctx context.Context) ([]Backend, error)
 // Strategy (no goroutine thread-switching / Setns required):
 //  1. Open the container's network namespace via netns.GetFromPid.
 //  2. Create a netlink handle that operates inside that namespace.
-//     netlink.NewHandleAt opens a netlink socket inside the namespace without
-//     altering the calling goroutine's own network namespace.
-//  3. List interfaces inside the container and record the ifindex of the veth
-//     (this is the container-side veth index, valid within its own namespace).
-//  4. On the host, scan /sys/class/net/<iface>/iflink for every interface.
-//     The kernel reports a veth's peer ifindex as iflink. If the peer is in a
-//     different namespace, iflink equals the peer's ifindex in THAT namespace.
-//     Match: host_iface.iflink == container_veth.ifindex → that is our host veth.
+//  3. List interfaces inside the container and find the veth.
+//  4. For a veth pair across namespaces, the container veth's iflink
+//     (mapped to ParentIndex in netlink) is the ifindex of the host veth
+//     in the host namespace!
+//  5. Look up the host interface by its ifindex.
 func FindHostVeth(containerPID int) (name string, ifIndex int, err error) {
-	// Open the container's network namespace (does not change current goroutine's ns).
+	// Open the container's network namespace
 	ns, err := netns.GetFromPid(containerPID)
 	if err != nil {
 		return "", 0, fmt.Errorf("get container netns (pid %d): %w", containerPID, err)
 	}
 	defer ns.Close()
 
-	// Create a netlink handle scoped to the container's network namespace.
-	// NewHandleAt opens a netlink socket inside the given namespace without
-	// altering the calling goroutine's own network namespace.
+	// Create a netlink handle scoped to the container's network namespace
 	h, err := netlink.NewHandleAt(ns)
 	if err != nil {
 		return "", 0, fmt.Errorf("create netlink handle in container netns: %w", err)
 	}
-	defer h.Delete() // netlink.Handle uses Delete(), not Close(), in v1.1.0
+	defer h.Delete()
 
-	// List interfaces in the container namespace.
+	// List interfaces in the container namespace
 	links, err := h.LinkList()
 	if err != nil {
 		return "", 0, fmt.Errorf("list links in container netns (pid %d): %w", containerPID, err)
 	}
 
-	// Find the veth and record its ifindex inside the container namespace.
-	var containerVethIdx int
+	// Find the veth and record its iflink (ParentIndex)
+	var hostVethIdx int
 	for _, l := range links {
+		fmt.Printf("DEBUG: FindHostVeth(pid %d) found link %s (type %s), index %d, parent %d\n", containerPID, l.Attrs().Name, l.Type(), l.Attrs().Index, l.Attrs().ParentIndex)
 		if l.Type() == "veth" {
-			containerVethIdx = l.Attrs().Index
+			hostVethIdx = l.Attrs().ParentIndex
 			break
 		}
 	}
-	if containerVethIdx == 0 {
+	if hostVethIdx == 0 {
 		return "", 0, fmt.Errorf("no veth interface found in container (pid %d)", containerPID)
 	}
 
-	// Scan host interfaces via /sys/class/net to find the peer.
-	// For a veth pair across namespaces, the host-side veth's iflink equals
-	// the container-side veth's ifindex (in the container's namespace).
-	return hostVethByPeerIdx(containerVethIdx)
-}
-
-// hostVethByPeerIdx scans /sys/class/net to find the host interface whose
-// iflink matches the given peer interface index (from a different namespace).
-func hostVethByPeerIdx(peerIdx int) (string, int, error) {
-	entries, err := os.ReadDir("/sys/class/net")
+	// Fetch the host interface by its ifindex (in the host namespace)
+	hostLink, err := netlink.LinkByIndex(hostVethIdx)
 	if err != nil {
-		return "", 0, fmt.Errorf("read /sys/class/net: %w", err)
+		return "", 0, fmt.Errorf("find host veth by index %d: %w", hostVethIdx, err)
 	}
+	fmt.Printf("DEBUG: FindHostVeth(pid %d) returning host link %s (index %d)\n", containerPID, hostLink.Attrs().Name, hostVethIdx)
 
-	for _, e := range entries {
-		iface := e.Name()
-
-		ifIndex, err := readSysNetInt(iface, "ifindex")
-		if err != nil {
-			continue
-		}
-		ifLink, err := readSysNetInt(iface, "iflink")
-		if err != nil {
-			continue
-		}
-
-		// A veth has iflink != ifindex.
-		// When the peer is in another namespace, iflink = peer's ifindex in
-		// that namespace — which matches containerVethIdx.
-		if ifLink != ifIndex && ifLink == peerIdx {
-			return iface, ifIndex, nil
-		}
-	}
-
-	return "", 0, fmt.Errorf("no host veth found with peer ifindex %d", peerIdx)
-}
-
-// readSysNetInt reads an integer value from /sys/class/net/<iface>/<file>.
-func readSysNetInt(iface, file string) (int, error) {
-	data, err := os.ReadFile(fmt.Sprintf("/sys/class/net/%s/%s", iface, file))
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(strings.TrimSpace(string(data)))
+	return hostLink.Attrs().Name, hostVethIdx, nil
 }
 
 // Close releases the Docker client connection.
