@@ -69,8 +69,6 @@ static __always_inline void update_ip_csum(struct iphdr *iph)
  * =========================================================================
  * Intercepts ICMP packets destined to the VIP.
  * Performs DNAT: picks a backend randomly, rewrites dst MAC and dst IP.
- * Returns XDP_TX so the docker0 bridge delivers the frame to the correct
- * container veth.
  */
 SEC("xdp")
 int xdp_lb_ingress(struct xdp_md *ctx)
