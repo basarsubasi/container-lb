@@ -3,11 +3,15 @@ CLANG  := clang
 BPF2GO := bpf2go
 ARCH   := $(shell uname -m)
 
-INCLUDES := -I./kernelspace -I/usr/include/$(ARCH)-linux-gnu
+BPFTOOL ?= ./tools/bpftool
 
-.PHONY: generate build clean run backends-up backends-down
+.PHONY: generate build clean run backends-up backends-down vmlinux
 
-generate:
+vmlinux:
+	@echo "==> Generating vmlinux.h from BTF..."
+	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > kernelspace/vmlinux.h
+
+generate: vmlinux
 	cd userspace/bpf && \
 		GOPACKAGE=bpf GOARCH=amd64 $(BPF2GO) \
 			-cc $(CLANG) \
@@ -16,7 +20,7 @@ generate:
 			-type lb_config \
 			-type stats_counter \
 			lb ../../kernelspace/xdp_lb.c \
-			-- -O2 -g -Wall $(INCLUDES)
+			-- -O2 -g -Wall -I../../kernelspace
 
 build:
 	mkdir -p bin

@@ -1,11 +1,9 @@
-#include <linux/bpf.h>
-#include <linux/if_ether.h>
-#include <linux/ip.h>
-#include <linux/icmp.h>
-#include <linux/in.h>
+#include "vmlinux.h"
 
-#include "include/bpf_helpers.h"
-#include "include/bpf_endian.h"
+#define ETH_P_IP 0x0800
+
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_endian.h>
 #include "types.h"
 
 /* =========================================================================

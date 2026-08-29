@@ -1,7 +1,6 @@
 #ifndef __LB_TYPES_H__
 #define __LB_TYPES_H__
 
-#include <linux/types.h>
 
 #define MAX_BACKENDS 64
 #define ETH_ALEN 6

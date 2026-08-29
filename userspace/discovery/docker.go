@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/vishvananda/netlink"
@@ -56,7 +56,7 @@ func (w *DockerWatcher) DiscoverBackends(ctx context.Context) ([]Backend, error)
 		filterArgs.Add("label", w.labelFilter)
 	}
 
-	containers, err := w.cli.ContainerList(ctx, types.ContainerListOptions{
+	containers, err := w.cli.ContainerList(ctx, container.ListOptions{
 		Filters: filterArgs,
 	})
 	if err != nil {
