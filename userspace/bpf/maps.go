@@ -8,10 +8,14 @@ import (
 
 // UpdateConfig writes the global config (VIP, target port, active backend count,
 // docker0 MAC) into the BPF config_map at index 0.
+//
+// IPv4 fields are stored in native (wire) byte order: the BPF side loads them
+// as __u32 straight from packet memory, so the map bytes must match the wire
+// exactly. binary.NativeEndian produces that representation on any host.
 func (m *Manager) UpdateConfig(vip net.IP, vport uint16, backendCount uint32, srcMAC net.HardwareAddr) error {
 	var vipU32 uint32
 	if v4 := vip.To4(); v4 != nil {
-		vipU32 = binary.BigEndian.Uint32(v4)
+		vipU32 = binary.NativeEndian.Uint32(v4)
 	}
 
 	var mac [6]uint8
@@ -47,7 +51,7 @@ func (m *Manager) UpdateBackend(index uint32, ip net.IP, port uint16, mac net.Ha
 	}
 
 	backend := lbBackendInfo{
-		Ipv4:   binary.BigEndian.Uint32(v4),
+		Ipv4:   binary.NativeEndian.Uint32(v4),
 		Port:   port,
 		Mac:    macBytes,
 		Weight: 1,
@@ -59,7 +63,7 @@ func (m *Manager) UpdateBackend(index uint32, ip net.IP, port uint16, mac net.Ha
 	}
 
 	// Write reverse entry: backend IPv4 → index (used by TC egress for SNAT)
-	ipKey := binary.BigEndian.Uint32(v4)
+	ipKey := binary.NativeEndian.Uint32(v4)
 	if err := m.objs.BackendIpsMap.Put(&ipKey, &index); err != nil {
 		return fmt.Errorf("backend_ips_map put ip=%s: %w", ip, err)
 	}
@@ -78,7 +82,7 @@ func (m *Manager) ClearBackend(index uint32, ip net.IP) error {
 
 	// Remove from reverse IP map (ignore not-found errors)
 	if v4 := ip.To4(); v4 != nil {
-		ipKey := binary.BigEndian.Uint32(v4)
+		ipKey := binary.NativeEndian.Uint32(v4)
 		_ = m.objs.BackendIpsMap.Delete(&ipKey)
 	}
 

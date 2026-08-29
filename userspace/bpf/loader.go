@@ -46,8 +46,7 @@ func NewManager(ifaceName string) (*Manager, error) {
 		ifaceIdx:  iface.Index,
 	}
 
-	/*
-	// Attach DNAT program to docker0 ingress.
+	// Attach the DNAT program to the ingress interface.
 	// Try native driver mode first; veth/bridge interfaces may require generic.
 	xdpLink, err := link.AttachXDP(link.XDPOptions{
 		Program:   objs.XdpLbIngress,
@@ -66,7 +65,6 @@ func NewManager(ifaceName string) (*Manager, error) {
 		}
 	}
 	m.xdpLink = xdpLink
-	*/
 
 	return m, nil
 }

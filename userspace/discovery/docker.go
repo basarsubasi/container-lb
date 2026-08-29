@@ -168,7 +168,6 @@ func FindHostVeth(containerPID int) (name string, ifIndex int, err error) {
 	// Find the veth and record its iflink (ParentIndex)
 	var hostVethIdx int
 	for _, l := range links {
-		fmt.Printf("DEBUG: FindHostVeth(pid %d) found link %s (type %s), index %d, parent %d\n", containerPID, l.Attrs().Name, l.Type(), l.Attrs().Index, l.Attrs().ParentIndex)
 		if l.Type() == "veth" {
 			hostVethIdx = l.Attrs().ParentIndex
 			break
@@ -183,7 +182,6 @@ func FindHostVeth(containerPID int) (name string, ifIndex int, err error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("find host veth by index %d: %w", hostVethIdx, err)
 	}
-	fmt.Printf("DEBUG: FindHostVeth(pid %d) returning host link %s (index %d)\n", containerPID, hostLink.Attrs().Name, hostVethIdx)
 
 	return hostLink.Attrs().Name, hostVethIdx, nil
 }
