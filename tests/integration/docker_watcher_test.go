@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -13,6 +14,10 @@ import (
 )
 
 func TestDockerWatcher_DiscoverBackends(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root to inspect container netns (veth discovery); re-run with sudo, e.g. 'make test-integration'")
+	}
+
 	ctx := context.Background()
 
 	// Spin up a container with the load balancer label using testutil
@@ -34,7 +39,7 @@ func TestDockerWatcher_DiscoverBackends(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Len(t, backends, 1)
-	
+
 	if len(backends) == 1 {
 		b := backends[0]
 		assert.NotEmpty(t, b.IP)
